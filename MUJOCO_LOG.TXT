@@ -1,0 +1,6 @@
+Sat Feb  8 12:38:23 2020
+ERROR: Expired activation key
+
+Sat Feb  8 12:41:00 2020
+ERROR: Invalid text in activation key
+

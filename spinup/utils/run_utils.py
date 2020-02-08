@@ -19,6 +19,7 @@ from textwrap import dedent
 import time
 from tqdm import trange
 import zlib
+import driftgym
 
 DIV_LINE_WIDTH = 80
 
