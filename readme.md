@@ -1,6 +1,30 @@
-**Status:** Maintenance (expect bug fixes and minor updates)
+# Interior Point Policy optimization under constraints
 
-Welcome to Spinning Up in Deep RL! 
+Adding the Safe RL algorithm for Constrained MDP in the Spinning up in Deep RL repository.
+
+## Installation:
+
+* Install the spinningup package with the IPO algorithm
+```
+git clone https://github.com/hari-sikchi/spinningup
+cd spinningup
+pip install -e .
+```
+* Install driftgym[Environments with constraints]
+```
+git clone https://github.com/hari-sikchi/driftgym
+cd driftgym
+pip install -e .
+```
+
+## Running Experiments
+```
+python -m spinup.run ipo_pytorch --env Straight-v0 --exp_name Straight-v0_with_constraints
+```
+
+
+
+## Welcome to Spinning Up in Deep RL! 
 ==================================
 
 This is an educational resource produced by OpenAI that makes it easier to learn about deep reinforcement learning (deep RL).
