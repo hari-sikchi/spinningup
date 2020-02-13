@@ -8,6 +8,7 @@ from spinup.utils.logx import EpochLogger
 from spinup.utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
 from spinup.utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
 import driftgym
+import safety_gym
 
 class PPOBuffer:
     """
@@ -82,7 +83,7 @@ class PPOBuffer:
         adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
         self.adv_buf = (self.adv_buf - adv_mean) / adv_std
         data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf,
-                    adv=self.adv_buf, logp=self.logp_buf)
+                    adv=self.adv_buf, logp=self.logp_buf,val=self.val_buf)
         return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in data.items()}
 
 
@@ -235,29 +236,41 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     # Set up function for computing PPO policy loss
     def compute_loss_pi(data,cost_data=None):
-        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+        obs, act, val,adv, logp_old = data['obs'], data['act'],data['val'], data['adv'], data['logp']
         if(cost_data is not None):
-            cost_obs, cost_act, cost_adv, cost_logp_old = cost_data['obs'], cost_data['act'], cost_data['adv'], cost_data['logp']
+            cost_obs, cost_act,cost_val, cost_adv, cost_logp_old = cost_data['obs'], cost_data['act'], cost_data['val'], cost_data['adv'], cost_data['logp']
 
         # Policy loss
+        ## Uses GAE 
         pi, logp = ac.pi(obs, act)
         ratio = torch.exp(logp - logp_old)
         clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
         loss_pi_vector = -(torch.min(ratio * adv, clip_adv))
         loss_pi = loss_pi_vector.mean()
+        # Uses value function directly
+        # pi, logp = ac.pi(obs, act)
+        # ratio = torch.exp(logp - logp_old)
+        # clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * val
+        # loss_pi_vector = -(torch.min(ratio * val, clip_adv))
+        # loss_pi = loss_pi_vector.mean()
+
+
 
         # Penalty parameter
         t = 100
         # Policy loss wrt Cumulative cost function
+        # print(cost_data)
         if cost_data is not None:
             cost_pi, cost_logp = ac.pi(cost_obs, cost_act)
             cost_ratio = torch.exp(cost_logp - cost_logp_old)
-            cost_clip_adv = torch.clamp(cost_ratio, 1-clip_ratio, 1+clip_ratio) * cost_adv
-            cost_loss_pi_vector = (torch.min(cost_ratio * cost_adv, cost_clip_adv))
+            cost_clip_adv = torch.clamp(cost_ratio, 1-clip_ratio, 1+clip_ratio) * (cost_val+cost_adv)
+            cost_loss_pi_vector = (torch.min(cost_ratio * (cost_val+cost_adv), cost_clip_adv))
+            # cost_loss_pi_hat = cost_loss_pi_vector.mean()-25
+
             cost_loss_pi_hat = cost_loss_pi_vector.mean()-env.constraint_limit
 
-            cost_loss_pi= -torch.log(torch.clamp(-cost_loss_pi_hat,min=1e-40))/t
-            # print("J_hat:{} Cost loss pi: {}".format(cost_loss_pi_vector.mean(),cost_loss_pi))
+            cost_loss_pi= -torch.log(torch.clamp(-cost_loss_pi_hat,min=1e-6))/t
+            # print("V_hat: {} J_hat:{} Constraint limit: {}, Cost loss pi: {}".format(-loss_pi,cost_loss_pi_vector.mean(),env.constraint_limit,cost_loss_pi))
             loss_pi+=cost_loss_pi
 
         # Useful extra info
@@ -345,6 +358,7 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             next_o, r, d, info = env.step(a)
             ep_ret += r
             ep_len += 1
+            # print(info)
             ep_cost += info['cost']
             # save and log
             buf.store(o, a, r, v, logp)
